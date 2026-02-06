@@ -1,0 +1,335 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>The Wall 🧱</title>
+<link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet">
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg: #0d0d0d; --surface: #1a1a2e; --surface2: #16213e;
+    --accent: #e94560; --text: #eee; --text-dim: #888;
+    --radius: 8px;
+  }
+
+  body {
+    background: var(--bg); color: var(--text);
+    font-family: 'Press Start 2P', monospace;
+    min-height: 100dvh; display: flex; flex-direction: column;
+    overflow: hidden; user-select: none;
+  }
+
+  /* Header */
+  header {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 12px 16px; background: var(--surface);
+    border-bottom: 2px solid var(--accent); flex-shrink: 0; z-index: 10;
+  }
+  header h1 { font-size: clamp(10px, 2.5vw, 16px); white-space: nowrap; }
+  header h1 span { color: var(--accent); }
+  .stats {
+    display: flex; gap: 16px; font-size: 9px; color: var(--text-dim);
+    align-items: center;
+  }
+  .stats .dot {
+    width: 8px; height: 8px; border-radius: 50%;
+    background: #0f0; display: inline-block;
+    animation: pulse 1.5s ease infinite;
+  }
+  @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.3} }
+
+  /* Canvas area */
+  .canvas-wrap {
+    flex: 1; overflow: auto; position: relative;
+    display: flex; align-items: center; justify-content: center;
+    touch-action: pan-x pan-y;
+  }
+  #canvas {
+    display: grid;
+    grid-template-columns: repeat(50, var(--cell));
+    grid-template-rows: repeat(50, var(--cell));
+    --cell: 14px;
+    background: #111; gap: 0;
+    border: 2px solid #333;
+    image-rendering: pixelated;
+    transition: transform .1s;
+  }
+  .px {
+    width: var(--cell); height: var(--cell);
+    background: #222; border: .5px solid rgba(255,255,255,.04);
+    cursor: crosshair; transition: background .15s;
+  }
+  .px:hover { filter: brightness(1.3); outline: 1.5px solid var(--accent); z-index: 1; }
+  .px.pop { animation: pop .25s ease; }
+  @keyframes pop { 0%{transform:scale(1)} 50%{transform:scale(1.5)} 100%{transform:scale(1)} }
+
+  /* Toolbar */
+  .toolbar {
+    display: flex; align-items: center; gap: 8px;
+    padding: 10px 16px; background: var(--surface);
+    border-top: 2px solid var(--accent); flex-shrink: 0;
+    overflow-x: auto; z-index: 10;
+  }
+  .swatch {
+    width: 28px; height: 28px; border-radius: 4px; border: 2px solid transparent;
+    cursor: pointer; transition: transform .15s, border-color .15s;
+    flex-shrink: 0;
+  }
+  .swatch:hover { transform: scale(1.2); }
+  .swatch.active { border-color: #fff; transform: scale(1.25); box-shadow: 0 0 8px rgba(233,69,96,.6); }
+  .swatch-custom {
+    position: relative; overflow: hidden;
+    background: conic-gradient(red,yellow,lime,cyan,blue,magenta,red);
+  }
+  .swatch-custom input {
+    position: absolute; inset: -10px; width: 150%; height: 150%;
+    opacity: 0; cursor: pointer;
+  }
+  .cooldown-bar {
+    height: 3px; background: var(--accent); width: 0;
+    position: fixed; top: 0; left: 0; z-index: 99;
+    transition: width .15s linear;
+  }
+
+  /* Tooltip */
+  .tooltip {
+    position: fixed; pointer-events: none;
+    background: var(--surface2); border: 1px solid var(--accent);
+    border-radius: var(--radius); padding: 6px 10px;
+    font-size: 8px; line-height: 1.6; z-index: 50;
+    opacity: 0; transition: opacity .15s;
+    max-width: 220px;
+  }
+  .tooltip.show { opacity: 1; }
+
+  /* Loading overlay */
+  .loading {
+    position: fixed; inset: 0; background: var(--bg);
+    display: flex; align-items: center; justify-content: center;
+    flex-direction: column; gap: 16px; z-index: 100;
+    font-size: 12px;
+  }
+  .loading.hide { opacity: 0; pointer-events: none; transition: opacity .4s; }
+  .spinner {
+    width: 32px; height: 32px; border: 3px solid #333;
+    border-top-color: var(--accent); border-radius: 50%;
+    animation: spin .6s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* Zoom controls */
+  .zoom-ctrl {
+    position: fixed; bottom: 60px; right: 12px; display: flex;
+    flex-direction: column; gap: 4px; z-index: 10;
+  }
+  .zoom-ctrl button {
+    width: 32px; height: 32px; border-radius: 4px; border: 1px solid #444;
+    background: var(--surface); color: var(--text); font-size: 16px;
+    cursor: pointer; font-family: inherit;
+  }
+  .zoom-ctrl button:active { background: var(--accent); }
+
+  @media (max-width: 500px) {
+    #canvas { --cell: 10px; }
+    .swatch { width: 24px; height: 24px; }
+  }
+</style>
+</head>
+<body>
+
+<div class="cooldown-bar" id="cooldownBar"></div>
+<div class="loading" id="loader"><div class="spinner"></div><div>Connecting to The Wall…</div></div>
+
+<div class="tooltip" id="tooltip"></div>
+
+<header>
+  <h1><span>The Wall 🧱</span> — Leave your mark</h1>
+  <div class="stats">
+    <span class="dot"></span>
+    <span id="userCount">0 online</span>
+  </div>
+</header>
+
+<div class="canvas-wrap" id="wrap">
+  <div id="canvas"></div>
+</div>
+
+<div class="zoom-ctrl">
+  <button id="zoomIn">+</button>
+  <button id="zoomOut">−</button>
+</div>
+
+<div class="toolbar" id="toolbar"></div>
+
+<script type="module">
+  import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
+  import { getDatabase, ref, set, onValue, onChildChanged, onDisconnect, serverTimestamp, onChildAdded }
+    from "https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js";
+  import { getAuth, signInAnonymously, onAuthStateChanged }
+    from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
+
+  const firebaseConfig = {
+    apiKey: "AIzaSyDetWYl8-qj3V4J33C06tcgZd5ILTm0BOo",
+    authDomain: "the-wall-canvas.firebaseapp.com",
+    projectId: "the-wall-canvas",
+    storageBucket: "the-wall-canvas.firebasestorage.app",
+    messagingSenderId: "486141186077",
+    appId: "1:486141186077:web:0f16020b07717ada2f36f4",
+    databaseURL: "https://the-wall-canvas-default-rtdb.firebaseio.com"
+  };
+
+  const GRID = 50;
+  const COLORS = [
+    '#FF4500','#FFA800','#FFD635','#00A368','#7EED56','#2450A4',
+    '#3690EA','#51E9F4','#811E9F','#B44AC0','#FF99AA','#FFFFFF',
+    '#D4D7D9','#898D90','#000000','#6D482F'
+  ];
+
+  let app, db, auth, uid;
+  let selectedColor = COLORS[0];
+  let lastPlace = 0;
+  let zoom = 1;
+  const cells = [];
+
+  // Build grid
+  const canvas = document.getElementById('canvas');
+  const frag = document.createDocumentFragment();
+  for (let i = 0; i < GRID * GRID; i++) {
+    const d = document.createElement('div');
+    d.className = 'px';
+    d.dataset.i = i;
+    cells.push(d);
+    frag.appendChild(d);
+  }
+  canvas.appendChild(frag);
+
+  // Build toolbar
+  const toolbar = document.getElementById('toolbar');
+  COLORS.forEach(c => {
+    const s = document.createElement('div');
+    s.className = 'swatch' + (c === selectedColor ? ' active' : '');
+    s.style.background = c;
+    s.addEventListener('click', () => pickColor(c, s));
+    toolbar.appendChild(s);
+  });
+  // Custom
+  const custom = document.createElement('div');
+  custom.className = 'swatch swatch-custom';
+  const inp = document.createElement('input');
+  inp.type = 'color'; inp.value = '#FF69B4';
+  inp.addEventListener('input', () => pickColor(inp.value, custom));
+  custom.appendChild(inp);
+  toolbar.appendChild(custom);
+
+  function pickColor(c, el) {
+    selectedColor = c;
+    toolbar.querySelectorAll('.swatch').forEach(s => s.classList.remove('active'));
+    el.classList.add('active');
+  }
+
+  // Zoom
+  function setZoom(z) {
+    zoom = Math.max(.4, Math.min(3, z));
+    canvas.style.transform = `scale(${zoom})`;
+    canvas.style.transformOrigin = 'center center';
+  }
+  document.getElementById('zoomIn').onclick = () => setZoom(zoom + .2);
+  document.getElementById('zoomOut').onclick = () => setZoom(zoom - .2);
+
+  // Tooltip
+  const tooltip = document.getElementById('tooltip');
+  const pixelMeta = {};
+  canvas.addEventListener('pointermove', e => {
+    const t = e.target;
+    if (!t.classList.contains('px')) { tooltip.classList.remove('show'); return; }
+    const meta = pixelMeta[t.dataset.i];
+    if (!meta) { tooltip.classList.remove('show'); return; }
+    const d = new Date(meta.t);
+    tooltip.innerHTML = `👤 ${meta.u.slice(0,8)}…<br>🕐 ${d.toLocaleString()}`;
+    tooltip.style.left = Math.min(e.clientX + 12, innerWidth - 230) + 'px';
+    tooltip.style.top = (e.clientY - 50) + 'px';
+    tooltip.classList.add('show');
+  });
+  canvas.addEventListener('pointerleave', () => tooltip.classList.remove('show'));
+
+  // Place pixel
+  canvas.addEventListener('click', e => {
+    const t = e.target;
+    if (!t.classList.contains('px') || !uid) return;
+    const now = Date.now();
+    if (now - lastPlace < 1000) return; // rate limit
+    lastPlace = now;
+    const i = t.dataset.i;
+    set(ref(db, `wall/pixels/${i}`), { c: selectedColor, u: uid, t: now });
+    // cooldown bar
+    const bar = document.getElementById('cooldownBar');
+    bar.style.transition = 'none'; bar.style.width = '100%';
+    requestAnimationFrame(() => {
+      bar.style.transition = 'width 1s linear'; bar.style.width = '0';
+    });
+  });
+
+  // Firebase init
+  try {
+    app = initializeApp(firebaseConfig);
+    db = getDatabase(app);
+    auth = getAuth(app);
+
+    onAuthStateChanged(auth, user => {
+      if (user) {
+        uid = user.uid;
+        // presence
+        const presRef = ref(db, `wall/presence/${uid}`);
+        set(presRef, true);
+        onDisconnect(presRef).remove();
+        init();
+      }
+    });
+    signInAnonymously(auth);
+  } catch(e) {
+    console.error('Firebase init failed', e);
+    document.getElementById('loader').innerHTML = '<div>⚠️ Firebase not configured yet.<br>Replace FIREBASE_CONFIG_PLACEHOLDER.</div>';
+  }
+
+  function init() {
+    // Load initial pixels
+    onValue(ref(db, 'wall/pixels'), snap => {
+      const data = snap.val();
+      if (!data) { done(); return; }
+      Object.entries(data).forEach(([i, v]) => {
+        cells[i].style.background = v.c;
+        pixelMeta[i] = { u: v.u, t: v.t };
+      });
+      done();
+    }, { onlyOnce: true });
+
+    // Live updates
+    onChildChanged(ref(db, 'wall/pixels'), snap => {
+      const i = snap.key, v = snap.val();
+      cells[i].style.background = v.c;
+      pixelMeta[i] = { u: v.u, t: v.t };
+      cells[i].classList.remove('pop');
+      void cells[i].offsetWidth;
+      cells[i].classList.add('pop');
+    });
+    onChildAdded(ref(db, 'wall/pixels'), snap => {
+      const i = snap.key, v = snap.val();
+      cells[i].style.background = v.c;
+      pixelMeta[i] = { u: v.u, t: v.t };
+    });
+
+    // Presence count
+    onValue(ref(db, 'wall/presence'), snap => {
+      const count = snap.exists() ? Object.keys(snap.val()).length : 0;
+      document.getElementById('userCount').textContent = `${count} online`;
+    });
+  }
+
+  function done() {
+    document.getElementById('loader').classList.add('hide');
+  }
+</script>
+</body>
+</html>
